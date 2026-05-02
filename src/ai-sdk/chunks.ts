@@ -11,6 +11,7 @@ type ToolChunkWithName = UIMessageChunk & {
 export type UIChunkNormalizerOptions = {
   notifyToolWrite?: (chunk: ToolChunkWithName) => void;
   isToolWrite?: (toolName: string) => boolean;
+  startMessageId?: string;
 };
 
 export function createUIMessageChunkStreamFromDurableEvents(
@@ -21,6 +22,12 @@ export function createUIMessageChunkStreamFromDurableEvents(
 
   return new ReadableStream<UIMessageChunk>({
     async start(controller) {
+      if (options.startMessageId) {
+        controller.enqueue({
+          type: "start",
+          messageId: options.startMessageId,
+        } as UIMessageChunk);
+      }
       const reader = durableEvents.getReader();
       try {
         while (true) {

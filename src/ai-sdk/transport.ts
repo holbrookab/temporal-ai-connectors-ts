@@ -50,6 +50,7 @@ export class TemporalDurableChatTransport<
       {
         isToolWrite: this.options.isToolWrite,
         notifyToolWrite: this.options.notifyToolWrite,
+        startMessageId: ack.streamId,
       },
     );
   }
