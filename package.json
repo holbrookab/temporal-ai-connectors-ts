@@ -1,0 +1,92 @@
+{
+  "name": "@holbrookab/temporal-ai-connectors",
+  "version": "0.1.0",
+  "description": "Durable chat streaming connectors for Temporal AI workers and AI SDK UI clients.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/holbrookab/temporal-ai-connectors-ts.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "examples",
+    "LICENSE",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./core": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    },
+    "./ai-sdk": {
+      "types": "./dist/ai-sdk/index.d.ts",
+      "import": "./dist/ai-sdk/index.js"
+    },
+    "./adapters/appsync-dynamodb": {
+      "types": "./dist/adapters/appsync-dynamodb/index.d.ts",
+      "import": "./dist/adapters/appsync-dynamodb/index.js"
+    },
+    "./adapters/redis-dynamodb": {
+      "types": "./dist/adapters/redis-dynamodb/index.d.ts",
+      "import": "./dist/adapters/redis-dynamodb/index.js"
+    },
+    "./vercel": {
+      "types": "./dist/vercel/index.d.ts",
+      "import": "./dist/vercel/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm run test && npm run build"
+  },
+  "peerDependencies": {
+    "@ai-sdk/react": "^4.0.0-beta.115",
+    "ai": "^7.0.0-beta.115"
+  },
+  "peerDependenciesMeta": {
+    "@ai-sdk/react": {
+      "optional": true
+    },
+    "@aws-sdk/client-sts": {
+      "optional": true
+    },
+    "@aws-sdk/credential-providers": {
+      "optional": true
+    },
+    "@aws-sdk/lib-dynamodb": {
+      "optional": true
+    },
+    "@vercel/oidc": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1034.0",
+    "@aws-sdk/client-sts": "^3.1034.0",
+    "@aws-sdk/credential-providers": "^3.1034.0",
+    "@aws-sdk/lib-dynamodb": "^3.1034.0",
+    "@smithy/types": "^4.10.0",
+    "@vercel/oidc": "^3.2.0"
+  },
+  "devDependencies": {
+    "@ai-sdk/react": "4.0.0-beta.115",
+    "@types/node": "^20.19.0",
+    "ai": "7.0.0-beta.115",
+    "typescript": "^6.0.3",
+    "vitest": "^4.0.14"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

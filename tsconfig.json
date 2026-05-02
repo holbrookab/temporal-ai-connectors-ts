@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "paths": {
+      "@holbrookab/temporal-ai-connectors": ["./src/index.ts"],
+      "@holbrookab/temporal-ai-connectors/core": ["./src/core/index.ts"],
+      "@holbrookab/temporal-ai-connectors/ai-sdk": ["./src/ai-sdk/index.ts"],
+      "@holbrookab/temporal-ai-connectors/adapters/appsync-dynamodb": [
+        "./src/adapters/appsync-dynamodb/index.ts"
+      ],
+      "@holbrookab/temporal-ai-connectors/adapters/redis-dynamodb": [
+        "./src/adapters/redis-dynamodb/index.ts"
+      ],
+      "@holbrookab/temporal-ai-connectors/vercel": ["./src/vercel/index.ts"]
+    },
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "allowSyntheticDefaultImports": true
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts", "examples/**/*.ts"]
+}
