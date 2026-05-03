@@ -1,5 +1,5 @@
 import type { ChatTransport, UIMessage, UIMessageChunk, UITools } from "ai";
-import type { DurableStreamData, DurableStreamEvent } from "../core/types";
+import type { DurableStreamData, DurableStreamEvent, TaskLifecycleData } from "../core/types";
 
 export type DurableChatAck = {
   accepted?: boolean;
@@ -21,11 +21,21 @@ export type DurableLlmStreamDataPart = {
   "llm-stream": DurableStreamData;
 };
 
+export type DurableTaskEventDataPart = {
+  "task-event": TaskLifecycleData;
+};
+
 export type DurableUIMessage<
   METADATA = unknown,
   DATA_PARTS extends Record<string, unknown> = Record<string, unknown>,
   TOOLS extends UITools = UITools,
 > = UIMessage<METADATA, DATA_PARTS & DurableLlmStreamDataPart, TOOLS>;
+
+export type DurableTaskUIMessage<
+  METADATA = unknown,
+  DATA_PARTS extends Record<string, unknown> = Record<string, unknown>,
+  TOOLS extends UITools = UITools,
+> = UIMessage<METADATA, DATA_PARTS & DurableLlmStreamDataPart & DurableTaskEventDataPart, TOOLS>;
 
 export type DurableStreamFactory<TAck extends DurableChatAck = DurableChatAck> = (
   ack: TAck,

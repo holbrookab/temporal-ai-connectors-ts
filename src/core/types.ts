@@ -38,6 +38,12 @@ export type ToolLifecycleEvent =
   | "tool-output-available"
   | "tool-output-error";
 
+export type TaskLifecycleEvent =
+  | "task-plan-created"
+  | "task-started"
+  | "task-completed"
+  | "task-failed";
+
 export type StreamOptions = {
   visible?: boolean;
   streamId?: string;
@@ -93,6 +99,41 @@ export type ToolLifecycleInput = {
   providerExecuted?: boolean;
   preliminary?: boolean;
   metadata?: Record<string, unknown>;
+};
+
+export type PlannedTask = {
+  id: string;
+  title: string;
+  objective?: string;
+  skillNames?: string[];
+  dependsOn?: string[];
+  execution?: "parallel" | "sequential" | string;
+};
+
+export type TaskPlan = {
+  planId?: string;
+  summary?: string;
+  execution: "parallel" | "sequential" | string;
+  reason?: string;
+  requiresSynthesis?: boolean;
+  tasks?: PlannedTask[];
+};
+
+export type TaskResult = {
+  taskId: string;
+  title?: string;
+  text?: string;
+  agentResult?: unknown;
+};
+
+export type TaskLifecycleData = {
+  event: TaskLifecycleEvent | string;
+  id?: string;
+  plan?: TaskPlan;
+  task?: PlannedTask;
+  result?: TaskResult;
+  error?: string;
+  [key: string]: unknown;
 };
 
 export type DurableStreamData =
