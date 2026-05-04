@@ -83,6 +83,7 @@ export function normalizeUIMessageChunks(
 ): UIMessageChunk[] {
   if (!chunk || typeof chunk !== "object") return [];
   const value = chunk as Record<string, unknown>;
+  const normalizedValue = normalizeProviderMetadata(value);
 
   if (value.type === "tool-output-available" || value.type === "tool-output-error") {
     const toolCallId = typeof value.toolCallId === "string" ? value.toolCallId : undefined;
@@ -90,7 +91,7 @@ export function normalizeUIMessageChunks(
     if (remembered) {
       return [
         {
-          ...value,
+          ...normalizedValue,
           toolName: typeof value.toolName === "string" ? value.toolName : remembered.toolName,
           dynamic: value.dynamic === undefined ? remembered.dynamic : value.dynamic,
         } as UIMessageChunk,
@@ -98,7 +99,35 @@ export function normalizeUIMessageChunks(
     }
   }
 
-  return [chunk as UIMessageChunk];
+  return [normalizedValue as UIMessageChunk];
+}
+
+function normalizeProviderMetadata(value: Record<string, unknown>): Record<string, unknown> {
+  if (!isToolLifecycleChunk(value)) return value;
+  const metadata = value.metadata;
+  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return value;
+
+  const { metadata: _metadata, providerMetadata, ...rest } = value;
+  return {
+    ...rest,
+    providerMetadata: {
+      ...(isRecord(providerMetadata) ? providerMetadata : {}),
+      temporal: metadata,
+    },
+  };
+}
+
+function isToolLifecycleChunk(value: Record<string, unknown>): boolean {
+  return (
+    value.type === "tool-input-available" ||
+    value.type === "tool-input-error" ||
+    value.type === "tool-output-available" ||
+    value.type === "tool-output-error"
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 export function isControlFrame(value: unknown): value is DurableChatControlFrame {
