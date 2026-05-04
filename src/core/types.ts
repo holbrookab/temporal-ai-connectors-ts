@@ -43,9 +43,26 @@ export type ToolLifecycleEvent =
 
 export type TaskLifecycleEvent =
   | "task-plan-created"
+  | "task-plan-updated"
   | "task-started"
   | "task-completed"
-  | "task-failed";
+  | "task-failed"
+  | "task-skipped"
+  | "task-blocked";
+
+export type TaskStatus =
+  | "planned"
+  | "active"
+  | "completed"
+  | "failed"
+  | "skipped"
+  | "blocked";
+
+export type TaskResultStatus =
+  | "complete"
+  | "blocked"
+  | "needs_user"
+  | "alternate_path";
 
 export type StreamOptions = {
   visible?: boolean;
@@ -169,6 +186,9 @@ export type TaskResult = {
   taskId: string;
   title?: string;
   text?: string;
+  status?: TaskResultStatus | string;
+  summary?: string;
+  blocker?: string;
   agentResult?: unknown;
 };
 
