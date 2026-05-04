@@ -2,6 +2,7 @@ import type { UIMessage } from "ai";
 import {
   TemporalDurableChatTransport,
   type DurableUIMessage,
+  type DurableWorkflowUIMessage,
 } from "../src/ai-sdk";
 
 type AppData = {
@@ -9,6 +10,7 @@ type AppData = {
 };
 
 type AppMessage = DurableUIMessage<{ traceId?: string }, AppData>;
+type WorkflowMessage = DurableWorkflowUIMessage<{ traceId?: string }, AppData>;
 
 const transport = new TemporalDurableChatTransport<AppMessage>({
   streamFactory: () =>
@@ -20,5 +22,7 @@ const transport = new TemporalDurableChatTransport<AppMessage>({
 });
 
 const _message: UIMessage = {} as AppMessage;
+const _workflowMessage: UIMessage = {} as WorkflowMessage;
 void transport;
 void _message;
+void _workflowMessage;

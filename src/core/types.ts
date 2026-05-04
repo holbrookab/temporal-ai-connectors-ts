@@ -35,8 +35,11 @@ export type AttemptStatus =
 
 export type ToolLifecycleEvent =
   | "tool-input-available"
+  | "tool-approval-request"
+  | "tool-approval-response"
   | "tool-output-available"
-  | "tool-output-error";
+  | "tool-output-error"
+  | "tool-output-denied";
 
 export type TaskLifecycleEvent =
   | "task-plan-created"
@@ -92,12 +95,55 @@ export type ToolLifecycleInput = {
   event: ToolLifecycleEvent;
   toolCallId: string;
   toolName: string;
+  approvalId?: string;
+  approved?: boolean;
+  reason?: string;
+  isAutomatic?: boolean;
   input?: unknown;
   output?: unknown;
   errorText?: string;
   dynamic?: boolean;
   providerExecuted?: boolean;
   preliminary?: boolean;
+  metadata?: Record<string, unknown>;
+};
+
+export type HumanCheckpointChoice = {
+  id: string;
+  label: string;
+  description?: string;
+  value?: unknown;
+};
+
+export type HumanCheckpointQuestion = {
+  id: string;
+  title?: string;
+  prompt: string;
+  choices?: HumanCheckpointChoice[];
+  allowCustom?: boolean;
+  required?: boolean;
+};
+
+export type HumanCheckpointAnswer = {
+  questionId: string;
+  choiceId?: string;
+  customText?: string;
+  value?: unknown;
+};
+
+export type HumanCheckpointData = {
+  event:
+    | "checkpoint-created"
+    | "checkpoint-submitted"
+    | "checkpoint-canceled"
+    | "checkpoint-expired"
+    | string;
+  checkpointId: string;
+  title?: string;
+  summary?: string;
+  status?: "pending" | "submitted" | "canceled" | "expired" | string;
+  questions?: HumanCheckpointQuestion[];
+  answers?: HumanCheckpointAnswer[];
   metadata?: Record<string, unknown>;
 };
 

@@ -13,6 +13,7 @@ type RememberedToolChunk = {
   toolName: string;
   dynamic?: boolean;
   providerMetadata?: Record<string, unknown>;
+  input?: unknown;
 };
 
 export type UIChunkNormalizerOptions = {
@@ -58,12 +59,17 @@ export function createUIMessageChunkStreamFromDurableEvents(
               toolNamesByCallId.set(uiChunk.toolCallId, {
                 toolName: uiChunk.toolName,
                 dynamic: uiChunk.dynamic,
+                input: "input" in uiChunk ? uiChunk.input : undefined,
                 providerMetadata: isRecord(toolChunk.providerMetadata)
                   ? toolChunk.providerMetadata
                   : undefined,
               });
             }
-            if (uiChunk.type === "tool-output-available" || uiChunk.type === "tool-output-error") {
+            if (
+              uiChunk.type === "tool-output-available" ||
+              uiChunk.type === "tool-output-error" ||
+              uiChunk.type === "tool-output-denied"
+            ) {
               const toolName =
                 toolChunk.toolName ??
                 (toolChunk.toolCallId ? toolNamesByCallId.get(toolChunk.toolCallId)?.toolName : undefined);
@@ -95,7 +101,30 @@ export function normalizeUIMessageChunks(
   const value = chunk as Record<string, unknown>;
   const normalizedValue = normalizeProviderMetadata(value);
 
-  if (value.type === "tool-output-available" || value.type === "tool-output-error") {
+  if (value.type === "tool-approval-request") {
+    const toolCallId = typeof value.toolCallId === "string" ? value.toolCallId : undefined;
+    const remembered = toolCallId ? toolNamesByCallId.get(toolCallId) : undefined;
+    const approvalValue = attachRememberedProviderMetadata(normalizedValue, remembered?.providerMetadata);
+    return [
+      {
+        ...approvalValue,
+        toolName: typeof value.toolName === "string" ? value.toolName : remembered?.toolName,
+        input: value.input === undefined ? remembered?.input : value.input,
+        dynamic: value.dynamic === undefined ? remembered?.dynamic : value.dynamic,
+      } as UIMessageChunk,
+    ];
+  }
+
+  if (value.type === "tool-approval-response") {
+    const approvalValue = normalizedValue;
+    return [approvalValue as UIMessageChunk];
+  }
+
+  if (
+    value.type === "tool-output-available" ||
+    value.type === "tool-output-error" ||
+    value.type === "tool-output-denied"
+  ) {
     const toolCallId = typeof value.toolCallId === "string" ? value.toolCallId : undefined;
     const remembered = toolCallId ? toolNamesByCallId.get(toolCallId) : undefined;
     if (remembered) {
@@ -148,8 +177,11 @@ function isToolLifecycleChunk(value: Record<string, unknown>): boolean {
   return (
     value.type === "tool-input-available" ||
     value.type === "tool-input-error" ||
+    value.type === "tool-approval-request" ||
+    value.type === "tool-approval-response" ||
     value.type === "tool-output-available" ||
-    value.type === "tool-output-error"
+    value.type === "tool-output-error" ||
+    value.type === "tool-output-denied"
   );
 }
 

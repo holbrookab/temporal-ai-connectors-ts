@@ -23,6 +23,11 @@ The initial AI SDK target is `ai@7` / `@ai-sdk/react@4` beta. The runtime model
 matches the Go worker connector shape: workers publish live chunks, snapshots,
 attempt completions, and tool lifecycle events; frontend clients subscribe
 first, replay durable state, and dedupe live/replay races by event id.
+Tool lifecycle events include AI SDK tool approval chunks
+(`tool-approval-request`, `tool-approval-response`, and `tool-output-denied`).
+Plan or feedback UI that is not a concrete tool gate should travel as normal
+AI SDK `data-*` parts; this package includes durable data part typings for
+`llm-stream`, `task-event`, and `human-checkpoint`.
 
 ```ts
 import { createAppSyncTemporalChatTransport } from "@holbrookab/temporal-ai-connectors/adapters/appsync-dynamodb";

@@ -1,5 +1,10 @@
 import type { ChatTransport, UIMessage, UIMessageChunk, UITools } from "ai";
-import type { DurableStreamData, DurableStreamEvent, TaskLifecycleData } from "../core/types";
+import type {
+  DurableStreamData,
+  DurableStreamEvent,
+  HumanCheckpointData,
+  TaskLifecycleData,
+} from "../core/types";
 
 export type DurableChatAck = {
   accepted?: boolean;
@@ -25,6 +30,10 @@ export type DurableTaskEventDataPart = {
   "task-event": TaskLifecycleData;
 };
 
+export type DurableHumanCheckpointDataPart = {
+  "human-checkpoint": HumanCheckpointData;
+};
+
 export type DurableUIMessage<
   METADATA = unknown,
   DATA_PARTS extends Record<string, unknown> = Record<string, unknown>,
@@ -36,6 +45,16 @@ export type DurableTaskUIMessage<
   DATA_PARTS extends Record<string, unknown> = Record<string, unknown>,
   TOOLS extends UITools = UITools,
 > = UIMessage<METADATA, DATA_PARTS & DurableLlmStreamDataPart & DurableTaskEventDataPart, TOOLS>;
+
+export type DurableWorkflowUIMessage<
+  METADATA = unknown,
+  DATA_PARTS extends Record<string, unknown> = Record<string, unknown>,
+  TOOLS extends UITools = UITools,
+> = UIMessage<
+  METADATA,
+  DATA_PARTS & DurableLlmStreamDataPart & DurableTaskEventDataPart & DurableHumanCheckpointDataPart,
+  TOOLS
+>;
 
 export type DurableStreamFactory<TAck extends DurableChatAck = DurableChatAck> = (
   ack: TAck,

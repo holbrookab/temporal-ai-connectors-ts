@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   TemporalDurableChatTransport,
+  collectToolApprovals,
   createUIMessageChunkStreamFromDurableEvents,
+  getActiveToolApproval,
   normalizeUIMessageChunks,
 } from "../src/ai-sdk";
 
@@ -87,6 +89,99 @@ describe("createUIMessageChunkStreamFromDurableEvents", () => {
         temporal: { taskId: "task1", taskTitle: "Resume Extraction" },
       },
     });
+  });
+
+  it("normalizes tool approval chunks and keeps remembered tool metadata", () => {
+    const rememberedTools = new Map();
+    const [inputChunk] = normalizeUIMessageChunks(
+      {
+        type: "tool-input-available",
+        toolCallId: "call-1",
+        toolName: "create_worker",
+        input: { name: "Ada" },
+        metadata: { taskId: "task-write" },
+      },
+      rememberedTools,
+    );
+    rememberedTools.set("call-1", {
+      toolName: "create_worker",
+      input: { name: "Ada" },
+      providerMetadata: (inputChunk as { providerMetadata?: Record<string, unknown> }).providerMetadata,
+    });
+
+    const [requestChunk] = normalizeUIMessageChunks(
+      {
+        type: "tool-approval-request",
+        toolCallId: "call-1",
+        toolName: "create_worker",
+        approvalId: "approval-1",
+      },
+      rememberedTools,
+    );
+    const [responseChunk] = normalizeUIMessageChunks(
+      {
+        type: "tool-approval-response",
+        approvalId: "approval-1",
+        approved: true,
+        reason: "looks good",
+        metadata: { taskId: "task-write" },
+      },
+      rememberedTools,
+    );
+
+    expect(requestChunk).toMatchObject({
+      type: "tool-approval-request",
+      toolCallId: "call-1",
+      toolName: "create_worker",
+      approvalId: "approval-1",
+      input: { name: "Ada" },
+      providerMetadata: { temporal: { taskId: "task-write" } },
+    });
+    expect(responseChunk).toMatchObject({
+      type: "tool-approval-response",
+      approvalId: "approval-1",
+      approved: true,
+      reason: "looks good",
+      providerMetadata: { temporal: { taskId: "task-write" } },
+    });
+  });
+
+  it("collects pending and submitted tool approvals from UI messages", () => {
+    const messages = [
+      {
+        id: "assistant-1",
+        role: "assistant" as const,
+        parts: [
+          {
+            type: "tool-create_worker",
+            toolCallId: "call-1",
+            state: "approval-requested",
+            input: { name: "Ada" },
+            approval: { id: "approval-1" },
+            callProviderMetadata: { temporal: { taskId: "task-write" } },
+          },
+          {
+            type: "tool-update_worker",
+            toolCallId: "call-2",
+            state: "approval-responded",
+            input: { id: "worker-1" },
+            approval: { id: "approval-2", approved: false, reason: "wrong worker" },
+          },
+        ],
+      },
+    ];
+
+    expect(getActiveToolApproval(messages)).toMatchObject({
+      approvalId: "approval-1",
+      toolCallId: "call-1",
+      toolName: "create_worker",
+      status: "pending",
+      providerMetadata: { temporal: { taskId: "task-write" } },
+    });
+    expect(collectToolApprovals(messages)).toMatchObject([
+      { approvalId: "approval-1", status: "pending" },
+      { approvalId: "approval-2", status: "denied", reason: "wrong worker" },
+    ]);
   });
 
   it("includes per-send request body fields", async () => {
