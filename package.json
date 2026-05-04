@@ -1,6 +1,6 @@
 {
   "name": "@holbrookab/temporal-ai-connectors",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Durable chat streaming connectors for Temporal AI workers and AI SDK UI clients.",
   "type": "module",
   "license": "MIT",

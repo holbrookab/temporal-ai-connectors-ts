@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createUIMessageChunkStreamFromDurableEvents, normalizeUIMessageChunks } from "../src/ai-sdk";
+import {
+  TemporalDurableChatTransport,
+  createUIMessageChunkStreamFromDurableEvents,
+  normalizeUIMessageChunks,
+} from "../src/ai-sdk";
 
 describe("createUIMessageChunkStreamFromDurableEvents", () => {
   it("emits an AI SDK start chunk before durable events when startMessageId is provided", async () => {
@@ -47,5 +51,36 @@ describe("createUIMessageChunkStreamFromDurableEvents", () => {
       },
     });
     expect("metadata" in (chunk as Record<string, unknown>)).toBe(false);
+  });
+
+  it("includes per-send request body fields", async () => {
+    let requestBody: unknown;
+    const transport = new TemporalDurableChatTransport({
+      api: "/api/chat",
+      fetch: async (_input, init) => {
+        requestBody = JSON.parse(String(init?.body ?? "{}"));
+        return Response.json({ streamId: "stream-1" });
+      },
+      streamFactory: () =>
+        new ReadableStream({
+          start(controller) {
+            controller.close();
+          },
+        }),
+    });
+
+    await transport.sendMessages({
+      trigger: "submit-message",
+      chatId: "chat-1",
+      messageId: "message-1",
+      messages: [{ id: "message-1", role: "user", parts: [{ type: "text", text: "Hello" }] }],
+      abortSignal: undefined,
+      body: { conversationId: "conversation-1", userMessageId: "user-message-1" },
+    });
+
+    expect(requestBody).toMatchObject({
+      conversationId: "conversation-1",
+      userMessageId: "user-message-1",
+    });
   });
 });

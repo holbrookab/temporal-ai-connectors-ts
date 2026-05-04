@@ -77,6 +77,7 @@ export class TemporalDurableChatTransport<
     return {
       messages: options.messages,
       ...extraBody,
+      ...options.body,
     };
   }
 }
