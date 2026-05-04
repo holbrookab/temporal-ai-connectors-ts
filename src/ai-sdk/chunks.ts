@@ -6,6 +6,13 @@ type ToolChunkWithName = UIMessageChunk & {
   toolCallId?: string;
   toolName?: string;
   dynamic?: boolean;
+  providerMetadata?: Record<string, unknown>;
+};
+
+type RememberedToolChunk = {
+  toolName: string;
+  dynamic?: boolean;
+  providerMetadata?: Record<string, unknown>;
 };
 
 export type UIChunkNormalizerOptions = {
@@ -18,7 +25,7 @@ export function createUIMessageChunkStreamFromDurableEvents(
   durableEvents: ReadableStream<DurableStreamEvent>,
   options: UIChunkNormalizerOptions = {},
 ): ReadableStream<UIMessageChunk> {
-  const toolNamesByCallId = new Map<string, { toolName: string; dynamic?: boolean }>();
+  const toolNamesByCallId = new Map<string, RememberedToolChunk>();
 
   return new ReadableStream<UIMessageChunk>({
     async start(controller) {
@@ -51,6 +58,9 @@ export function createUIMessageChunkStreamFromDurableEvents(
               toolNamesByCallId.set(uiChunk.toolCallId, {
                 toolName: uiChunk.toolName,
                 dynamic: uiChunk.dynamic,
+                providerMetadata: isRecord(toolChunk.providerMetadata)
+                  ? toolChunk.providerMetadata
+                  : undefined,
               });
             }
             if (uiChunk.type === "tool-output-available" || uiChunk.type === "tool-output-error") {
@@ -79,7 +89,7 @@ export function createUIMessageChunkStreamFromDurableEvents(
 
 export function normalizeUIMessageChunks(
   chunk: unknown,
-  toolNamesByCallId = new Map<string, { toolName: string; dynamic?: boolean }>(),
+  toolNamesByCallId = new Map<string, RememberedToolChunk>(),
 ): UIMessageChunk[] {
   if (!chunk || typeof chunk !== "object") return [];
   const value = chunk as Record<string, unknown>;
@@ -89,9 +99,10 @@ export function normalizeUIMessageChunks(
     const toolCallId = typeof value.toolCallId === "string" ? value.toolCallId : undefined;
     const remembered = toolCallId ? toolNamesByCallId.get(toolCallId) : undefined;
     if (remembered) {
+      const outputValue = attachRememberedProviderMetadata(normalizedValue, remembered.providerMetadata);
       return [
         {
-          ...normalizedValue,
+          ...outputValue,
           toolName: typeof value.toolName === "string" ? value.toolName : remembered.toolName,
           dynamic: value.dynamic === undefined ? remembered.dynamic : value.dynamic,
         } as UIMessageChunk,
@@ -100,6 +111,22 @@ export function normalizeUIMessageChunks(
   }
 
   return [normalizedValue as UIMessageChunk];
+}
+
+function attachRememberedProviderMetadata(
+  value: Record<string, unknown>,
+  rememberedProviderMetadata?: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!rememberedProviderMetadata) return value;
+  const providerMetadata = isRecord(value.providerMetadata) ? value.providerMetadata : {};
+  if (isRecord(providerMetadata.temporal)) return value;
+  return {
+    ...value,
+    providerMetadata: {
+      ...rememberedProviderMetadata,
+      ...providerMetadata,
+    },
+  };
 }
 
 function normalizeProviderMetadata(value: Record<string, unknown>): Record<string, unknown> {

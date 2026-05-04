@@ -53,6 +53,42 @@ describe("createUIMessageChunkStreamFromDurableEvents", () => {
     expect("metadata" in (chunk as Record<string, unknown>)).toBe(false);
   });
 
+  it("keeps tool task metadata on output chunks that omit metadata", () => {
+    const rememberedTools = new Map();
+    const [inputChunk] = normalizeUIMessageChunks(
+      {
+        type: "tool-input-available",
+        toolCallId: "call-1",
+        toolName: "extractDocument",
+        input: { s3Uri: "s3://bucket/key.pdf" },
+        metadata: { taskId: "task1", taskTitle: "Resume Extraction" },
+      },
+      rememberedTools,
+    );
+    rememberedTools.set("call-1", {
+      toolName: "extractDocument",
+      providerMetadata: (inputChunk as { providerMetadata?: Record<string, unknown> }).providerMetadata,
+    });
+
+    const [outputChunk] = normalizeUIMessageChunks(
+      {
+        type: "tool-output-available",
+        toolCallId: "call-1",
+        output: { ok: true },
+      },
+      rememberedTools,
+    );
+
+    expect(outputChunk).toMatchObject({
+      type: "tool-output-available",
+      toolCallId: "call-1",
+      toolName: "extractDocument",
+      providerMetadata: {
+        temporal: { taskId: "task1", taskTitle: "Resume Extraction" },
+      },
+    });
+  });
+
   it("includes per-send request body fields", async () => {
     let requestBody: unknown;
     const transport = new TemporalDurableChatTransport({
