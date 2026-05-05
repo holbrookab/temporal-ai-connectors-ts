@@ -59,6 +59,13 @@ describe("createSubscribeFirstReplayStream", () => {
             snapshotText: "hello",
             snapshotSequence: 4,
             updatedAt: 10,
+            displayMode: "task",
+            taskId: "task-1",
+            taskTitle: "Extract resume data",
+            skillName: "document-extraction",
+            stepId: "step-0",
+            stepNumber: 0,
+            stepType: "tool-result",
           },
         ],
       }),
@@ -72,7 +79,18 @@ describe("createSubscribeFirstReplayStream", () => {
     expect(first.value?.eventId).toBe("!attempt#s1#text#_#attempt:text");
     expect(first.value?.chunk).toMatchObject({
       type: "data-llm-stream",
-      data: { event: "snapshot", snapshotText: "hello", sequence: 4 },
+      data: {
+        event: "snapshot",
+        snapshotText: "hello",
+        sequence: 4,
+        displayMode: "task",
+        taskId: "task-1",
+        taskTitle: "Extract resume data",
+        skillName: "document-extraction",
+        stepId: "step-0",
+        stepNumber: 0,
+        stepType: "tool-result",
+      },
     });
     expect(second.value?.eventId).toBe("01");
   });
