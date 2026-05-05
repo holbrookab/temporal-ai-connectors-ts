@@ -51,6 +51,11 @@ describe("createUIMessageChunkStreamFromDurableEvents", () => {
       toolName: "extractDocument",
       input: { s3Uri: "s3://bucket/key.pdf" },
       metadata: { taskId: "task1", taskTitle: "Extract Resume" },
+      displayMode: "task",
+      skillName: "document-extraction",
+      stepId: "step-0",
+      stepNumber: 0,
+      stepType: "initial",
     });
 
     expect(chunk).toEqual({
@@ -58,8 +63,21 @@ describe("createUIMessageChunkStreamFromDurableEvents", () => {
       toolCallId: "call-1",
       toolName: "extractDocument",
       input: { s3Uri: "s3://bucket/key.pdf" },
+      displayMode: "task",
+      skillName: "document-extraction",
+      stepId: "step-0",
+      stepNumber: 0,
+      stepType: "initial",
       providerMetadata: {
-        temporal: { taskId: "task1", taskTitle: "Extract Resume" },
+        temporal: {
+          taskId: "task1",
+          taskTitle: "Extract Resume",
+          displayMode: "task",
+          skillName: "document-extraction",
+          stepId: "step-0",
+          stepNumber: 0,
+          stepType: "initial",
+        },
       },
     });
     expect("metadata" in (chunk as Record<string, unknown>)).toBe(false);
@@ -185,6 +203,9 @@ describe("createUIMessageChunkStreamFromDurableEvents", () => {
         type: "tool-approval-request",
         toolCallId: "call-1",
         approvalId: "call-1:approval",
+        stepId: "step-0",
+        stepNumber: 0,
+        stepType: "initial",
       },
       rememberedTools,
     );
@@ -195,6 +216,9 @@ describe("createUIMessageChunkStreamFromDurableEvents", () => {
         approvalId: "call-1:approval",
         approved: true,
         reason: "confirmed",
+        stepId: "step-0",
+        stepNumber: 0,
+        stepType: "initial",
       },
       rememberedTools,
     );
@@ -218,8 +242,14 @@ describe("createUIMessageChunkStreamFromDurableEvents", () => {
           taskTitle: "Add worker",
           toolCallId: "call-1",
           toolName: "applicant_tracking_create_worker",
+          stepId: "step-0",
+          stepNumber: 0,
+          stepType: "initial",
           input: { name: "Ada", email: "ada@example.com" },
         },
+        stepId: "step-0",
+        stepNumber: 0,
+        stepType: "initial",
       },
     });
     expect(responseChunks[1]).toMatchObject({

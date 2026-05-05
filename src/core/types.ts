@@ -4,6 +4,7 @@ export type StreamLane = "text" | "reasoning" | "object" | "tool-input";
 
 export type StreamEvent =
   | "stream-start"
+  | "start-step"
   | "response-metadata"
   | "text-delta"
   | "reasoning-delta"
@@ -13,6 +14,7 @@ export type StreamEvent =
   | "element"
   | "file"
   | "source"
+  | "finish-step"
   | "finish"
   | "abort"
   | "snapshot"
@@ -64,6 +66,19 @@ export type TaskResultStatus =
   | "needs_user"
   | "alternate_path";
 
+export type DisplayMode = "assistant" | "task" | "hidden" | string;
+
+export type StreamScope = {
+  displayMode?: DisplayMode;
+  agentId?: string;
+  taskId?: string;
+  taskTitle?: string;
+  skillName?: string;
+  stepId?: string;
+  stepNumber?: number;
+  stepType?: string;
+};
+
 export type StreamOptions = {
   visible?: boolean;
   streamId?: string;
@@ -72,9 +87,9 @@ export type StreamOptions = {
   snapshotEveryChunks?: number;
   snapshotEveryChars?: number;
   persistEphemeralChunks?: boolean;
-};
+} & StreamScope;
 
-export type AttemptRef = {
+export type AttemptRef = StreamScope & {
   streamId: string;
   phase: StreamPhase;
   lane: StreamLane;
@@ -105,9 +120,11 @@ export type AttemptCompletion = AttemptRef & {
   sequence: number;
   status: AttemptStatus;
   reason?: string;
+  snapshotText?: string;
+  snapshotObject?: unknown;
 };
 
-export type ToolLifecycleInput = {
+export type ToolLifecycleInput = StreamScope & {
   streamId: string;
   event: ToolLifecycleEvent;
   toolCallId: string;
@@ -224,7 +241,7 @@ export type DurableStreamAttempt = {
   snapshotObject?: unknown;
   snapshotSequence: number;
   updatedAt: number;
-};
+} & StreamScope;
 
 export type DurableStreamEvent<TChunk = unknown> = {
   eventId: string;

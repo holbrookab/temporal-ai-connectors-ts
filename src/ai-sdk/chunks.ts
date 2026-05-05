@@ -154,27 +154,38 @@ function attachRememberedProviderMetadata(
 ): Record<string, unknown> {
   if (!rememberedProviderMetadata) return value;
   const providerMetadata = isRecord(value.providerMetadata) ? value.providerMetadata : {};
-  if (isRecord(providerMetadata.temporal)) return value;
+  const rememberedTemporal = isRecord(rememberedProviderMetadata.temporal)
+    ? rememberedProviderMetadata.temporal
+    : {};
+  const valueTemporal = isRecord(providerMetadata.temporal) ? providerMetadata.temporal : {};
   return {
     ...value,
     providerMetadata: {
       ...rememberedProviderMetadata,
       ...providerMetadata,
+      temporal: {
+        ...rememberedTemporal,
+        ...valueTemporal,
+      },
     },
   };
 }
 
 function normalizeProviderMetadata(value: Record<string, unknown>): Record<string, unknown> {
   if (!isToolLifecycleChunk(value)) return value;
-  const metadata = value.metadata;
-  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return value;
+  const metadata = isRecord(value.metadata) ? value.metadata : {};
+  const temporalScope = temporalScopeFromRecord(value);
+  if (Object.keys(metadata).length === 0 && Object.keys(temporalScope).length === 0) return value;
 
   const { metadata: _metadata, providerMetadata, ...rest } = value;
   return {
     ...rest,
     providerMetadata: {
       ...(isRecord(providerMetadata) ? providerMetadata : {}),
-      temporal: metadata,
+      temporal: {
+        ...metadata,
+        ...temporalScope,
+      },
     },
   };
 }
@@ -202,8 +213,10 @@ function humanCheckpointChunkFromApproval(
   const input = value.input;
   const providerMetadata = isRecord(value.providerMetadata) ? value.providerMetadata : {};
   const temporalMetadata = isRecord(providerMetadata.temporal) ? providerMetadata.temporal : {};
+  const temporalScope = temporalScopeFromRecord(value);
   const metadata = {
     ...temporalMetadata,
+    ...temporalScope,
     approvalId,
     checkpointId: approvalId,
     toolCallId,
@@ -218,6 +231,7 @@ function humanCheckpointChunkFromApproval(
     checkpointId: approvalId,
     approvalId,
     toolCallId,
+    ...temporalScope,
     ...(toolName ? { toolName } : {}),
     title,
     summary: approvalSummary(title, input),
@@ -268,6 +282,29 @@ function humanCheckpointChunkFromApproval(
     id: `human-checkpoint-${approvalId}`,
     data,
   } as UIMessageChunk;
+}
+
+function temporalScopeFromRecord(value: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  copyStringField(out, value, "displayMode");
+  copyStringField(out, value, "agentId");
+  copyStringField(out, value, "taskId");
+  copyStringField(out, value, "taskTitle");
+  copyStringField(out, value, "skillName");
+  copyStringField(out, value, "stepId");
+  copyNumberField(out, value, "stepNumber");
+  copyStringField(out, value, "stepType");
+  return out;
+}
+
+function copyStringField(out: Record<string, unknown>, input: Record<string, unknown>, key: string): void {
+  const value = input[key];
+  if (typeof value === "string" && value) out[key] = value;
+}
+
+function copyNumberField(out: Record<string, unknown>, input: Record<string, unknown>, key: string): void {
+  const value = input[key];
+  if (typeof value === "number" && Number.isFinite(value)) out[key] = value;
 }
 
 function approvalTitle(toolName?: string): string {

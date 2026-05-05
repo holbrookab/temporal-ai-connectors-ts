@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   applyDurableStreamData,
   selectActiveStreamText,
+  selectTaskStepStreamText,
+  selectToolInputText,
   type DurableStreamState,
 } from "../src/core";
 
@@ -49,5 +51,69 @@ describe("durable stream state", () => {
     });
 
     expect(selectActiveStreamText(state, "s1", "text")).toBe("");
+  });
+
+  it("selects task step and tool input text by durable scope", () => {
+    let state: DurableStreamState = {};
+    state = applyDurableStreamData(state, {
+      event: "text-delta",
+      streamId: "s1",
+      phase: "provider-live",
+      lane: "text",
+      attemptId: "agent:step-0:text",
+      sequence: 1,
+      delta: "task text",
+      displayMode: "task",
+      taskId: "task-1",
+      stepId: "step-0",
+      stepNumber: 0,
+      stepType: "initial",
+    });
+    state = applyDurableStreamData(state, {
+      event: "text-delta",
+      streamId: "s1",
+      phase: "provider-live",
+      lane: "text",
+      attemptId: "final:text",
+      sequence: 1,
+      delta: "assistant text",
+      displayMode: "assistant",
+    });
+    state = applyDurableStreamData(state, {
+      event: "tool-input-delta",
+      streamId: "s1",
+      phase: "provider-live",
+      lane: "tool-input",
+      attemptId: "agent:step-0:tool-input:call-1",
+      toolCallId: "call-1",
+      sequence: 1,
+      delta: "{\"q\"",
+      displayMode: "task",
+      taskId: "task-1",
+      stepId: "step-0",
+    });
+    state = applyDurableStreamData(state, {
+      event: "tool-input-delta",
+      streamId: "s1",
+      phase: "provider-live",
+      lane: "tool-input",
+      attemptId: "agent:step-0:tool-input:call-1",
+      toolCallId: "call-1",
+      sequence: 2,
+      delta: ":\"Ada\"}",
+      displayMode: "task",
+      taskId: "task-1",
+      stepId: "step-0",
+    });
+
+    expect(selectTaskStepStreamText(state, "s1", { taskId: "task-1", stepId: "step-0" })).toBe(
+      "task text",
+    );
+    expect(selectActiveStreamText(state, "s1", "text", { displayMode: "assistant" })).toBe(
+      "assistant text",
+    );
+    expect(selectToolInputText(state, "s1", "call-1", { taskId: "task-1" })).toBe(
+      "{\"q\":\"Ada\"}",
+    );
   });
 });

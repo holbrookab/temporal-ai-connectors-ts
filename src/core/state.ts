@@ -2,10 +2,12 @@ import type {
   AttemptStatus,
   DurableStreamAttempt,
   DurableStreamData,
+  DisplayMode,
   StreamLane,
+  StreamScope,
 } from "./types";
 
-export type DurableStreamAttemptState = {
+export type DurableStreamAttemptState = StreamScope & {
   streamId: string;
   lane: StreamLane;
   attemptId: string;
@@ -24,9 +26,10 @@ export function durableAttemptKey(input: {
   streamId: string;
   lane: StreamLane;
   attemptId: string;
+  stepId?: string;
   toolCallId?: string;
 }): string {
-  return `${input.streamId}:${input.lane}:${input.toolCallId ?? "_"}:${input.attemptId}`;
+  return `${input.streamId}:${input.lane}:${input.stepId ?? "_"}:${input.toolCallId ?? "_"}:${input.attemptId}`;
 }
 
 export function applyAttemptManifests(
@@ -47,6 +50,7 @@ export function applyAttemptManifests(
         partId: attempt.partId,
         toolCallId: attempt.toolCallId,
         toolName: attempt.toolName,
+        ...scopeFrom(attempt),
         status: attempt.status,
         text: attempt.status === "active" ? (attempt.snapshotText ?? "") : "",
         sequence: attempt.snapshotSequence,
@@ -72,6 +76,7 @@ export function applyDurableStreamData(
         partId: data.partId,
         toolCallId: data.toolCallId,
         toolName: data.toolName,
+        ...scopeFrom(data),
         status: data.status ?? "active",
         sequence: data.sequence,
         text: data.status && data.status !== "active" ? "" : (data.snapshotText ?? ""),
@@ -96,11 +101,15 @@ export function applyDurableStreamData(
           partId: data.partId,
           toolCallId: data.toolCallId,
           toolName: data.toolName,
+          ...scopeFrom(data),
           text: "",
         }),
         status: data.status,
         sequence: data.sequence,
-        text: data.status === "discarded" || data.status === "failed" ? "" : (existing?.text ?? ""),
+        text:
+          data.status === "discarded" || data.status === "failed"
+            ? ""
+            : (data.snapshotText ?? existing?.text ?? ""),
       },
     };
   }
@@ -112,6 +121,7 @@ export function applyDurableStreamData(
     partId: data.partId,
     toolCallId: data.toolCallId,
     toolName: data.toolName,
+    ...scopeFrom(data),
     status: "active" as const,
     text: "",
     sequence: 0,
@@ -130,6 +140,7 @@ export function applyDurableStreamData(
       partId: data.partId ?? existing.partId,
       toolCallId: data.toolCallId ?? existing.toolCallId,
       toolName: data.toolName ?? existing.toolName,
+      ...mergeScope(existing, scopeFrom(data)),
       status: "active",
       sequence: data.sequence,
       text: shouldAppend ? `${existing.text}${data.delta ?? ""}` : existing.text,
@@ -141,16 +152,47 @@ export function selectActiveStreamText(
   state: DurableStreamState,
   streamId: string,
   lane: StreamLane,
+  filter: StreamSelector = {},
 ): string {
-  return selectTextByStatus(state, streamId, lane, new Set(["active"]));
+  return selectTextByStatus(state, streamId, lane, new Set(["active"]), filter);
 }
 
 export function selectVisibleStreamText(
   state: DurableStreamState,
   streamId: string,
   lane: StreamLane,
+  filter: StreamSelector = {},
 ): string {
-  return selectTextByStatus(state, streamId, lane, new Set(["active", "committed"]));
+  return selectTextByStatus(state, streamId, lane, new Set(["active", "committed"]), filter);
+}
+
+export type StreamSelector = StreamScope & {
+  displayMode?: DisplayMode;
+  toolCallId?: string;
+};
+
+export function selectTaskStepStreamText(
+  state: DurableStreamState,
+  streamId: string,
+  input: { taskId: string; stepId?: string; lane?: StreamLane },
+): string {
+  return selectVisibleStreamText(state, streamId, input.lane ?? "text", {
+    displayMode: "task",
+    taskId: input.taskId,
+    stepId: input.stepId,
+  });
+}
+
+export function selectToolInputText(
+  state: DurableStreamState,
+  streamId: string,
+  toolCallId: string,
+  filter: StreamSelector = {},
+): string {
+  return selectVisibleStreamText(state, streamId, "tool-input", {
+    ...filter,
+    toolCallId,
+  });
 }
 
 function selectTextByStatus(
@@ -158,14 +200,54 @@ function selectTextByStatus(
   streamId: string,
   lane: StreamLane,
   statuses: Set<AttemptStatus>,
+  filter: StreamSelector,
 ): string {
   return Object.values(state)
     .filter((attempt) => attempt.streamId === streamId && attempt.lane === lane)
     .filter((attempt) => statuses.has(attempt.status))
+    .filter((attempt) => matchesSelector(attempt, filter))
     .sort((a, b) => (a.updatedAt ?? 0) - (b.updatedAt ?? 0))
     .map((attempt) => attempt.text)
     .filter(Boolean)
     .join("");
+}
+
+function matchesSelector(attempt: DurableStreamAttemptState, filter: StreamSelector): boolean {
+  if (
+    filter.displayMode !== undefined &&
+    (attempt.displayMode ?? "assistant") !== filter.displayMode
+  ) {
+    return false;
+  }
+  if (filter.agentId !== undefined && attempt.agentId !== filter.agentId) return false;
+  if (filter.taskId !== undefined && attempt.taskId !== filter.taskId) return false;
+  if (filter.taskTitle !== undefined && attempt.taskTitle !== filter.taskTitle) return false;
+  if (filter.skillName !== undefined && attempt.skillName !== filter.skillName) return false;
+  if (filter.stepId !== undefined && attempt.stepId !== filter.stepId) return false;
+  if (filter.stepNumber !== undefined && attempt.stepNumber !== filter.stepNumber) return false;
+  if (filter.stepType !== undefined && attempt.stepType !== filter.stepType) return false;
+  if (filter.toolCallId !== undefined && attempt.toolCallId !== filter.toolCallId) return false;
+  return true;
+}
+
+function scopeFrom(input: StreamScope): StreamScope {
+  return {
+    ...(input.displayMode !== undefined ? { displayMode: input.displayMode } : {}),
+    ...(input.agentId !== undefined ? { agentId: input.agentId } : {}),
+    ...(input.taskId !== undefined ? { taskId: input.taskId } : {}),
+    ...(input.taskTitle !== undefined ? { taskTitle: input.taskTitle } : {}),
+    ...(input.skillName !== undefined ? { skillName: input.skillName } : {}),
+    ...(input.stepId !== undefined ? { stepId: input.stepId } : {}),
+    ...(input.stepNumber !== undefined ? { stepNumber: input.stepNumber } : {}),
+    ...(input.stepType !== undefined ? { stepType: input.stepType } : {}),
+  };
+}
+
+function mergeScope(base: StreamScope, next: StreamScope): StreamScope {
+  return {
+    ...scopeFrom(base),
+    ...scopeFrom(next),
+  };
 }
 
 function pruneInactive(state: DurableStreamState): DurableStreamState {
