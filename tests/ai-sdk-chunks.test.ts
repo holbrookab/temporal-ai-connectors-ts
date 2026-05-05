@@ -146,6 +146,84 @@ describe("createUIMessageChunkStreamFromDurableEvents", () => {
     });
   });
 
+  it("emits human checkpoint data parts for tool approval lifecycle chunks", () => {
+    const rememberedTools = new Map();
+    const [inputChunk] = normalizeUIMessageChunks(
+      {
+        type: "tool-input-available",
+        toolCallId: "call-1",
+        toolName: "applicant_tracking_create_worker",
+        input: { name: "Ada", email: "ada@example.com" },
+        metadata: {
+          approvalWorkflowId: "workflow-1",
+          assistantMessageId: "assistant-1",
+          assistantMessageCreatedAt: 100,
+          taskId: "task-write",
+          taskTitle: "Add worker",
+        },
+      },
+      rememberedTools,
+    );
+    rememberedTools.set("call-1", {
+      toolName: "applicant_tracking_create_worker",
+      input: { name: "Ada", email: "ada@example.com" },
+      providerMetadata: (inputChunk as { providerMetadata?: Record<string, unknown> }).providerMetadata,
+    });
+
+    const requestChunks = normalizeUIMessageChunks(
+      {
+        type: "tool-approval-request",
+        toolCallId: "call-1",
+        approvalId: "call-1:approval",
+      },
+      rememberedTools,
+    );
+    const responseChunks = normalizeUIMessageChunks(
+      {
+        type: "tool-approval-response",
+        toolCallId: "call-1",
+        approvalId: "call-1:approval",
+        approved: true,
+        reason: "confirmed",
+      },
+      rememberedTools,
+    );
+
+    expect(requestChunks[1]).toMatchObject({
+      type: "data-human-checkpoint",
+      id: "human-checkpoint-call-1:approval",
+      data: {
+        event: "checkpoint-created",
+        checkpointId: "call-1:approval",
+        approvalId: "call-1:approval",
+        toolCallId: "call-1",
+        toolName: "applicant_tracking_create_worker",
+        status: "pending",
+        questions: [{ id: "call-1:approval", required: true }],
+        metadata: {
+          approvalWorkflowId: "workflow-1",
+          assistantMessageId: "assistant-1",
+          assistantMessageCreatedAt: 100,
+          taskId: "task-write",
+          taskTitle: "Add worker",
+          toolCallId: "call-1",
+          toolName: "applicant_tracking_create_worker",
+          input: { name: "Ada", email: "ada@example.com" },
+        },
+      },
+    });
+    expect(responseChunks[1]).toMatchObject({
+      type: "data-human-checkpoint",
+      data: {
+        event: "checkpoint-submitted",
+        checkpointId: "call-1:approval",
+        status: "approved",
+        approved: true,
+        reason: "confirmed",
+      },
+    });
+  });
+
   it("collects pending and submitted tool approvals from UI messages", () => {
     const messages = [
       {

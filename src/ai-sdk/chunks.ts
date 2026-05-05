@@ -1,6 +1,6 @@
 import type { UIMessageChunk } from "ai";
 import type { DurableChatControlFrame } from "./types";
-import type { DurableStreamEvent } from "../core/types";
+import type { DurableStreamEvent, HumanCheckpointData } from "../core/types";
 
 type ToolChunkWithName = UIMessageChunk & {
   toolCallId?: string;
@@ -105,19 +105,25 @@ export function normalizeUIMessageChunks(
     const toolCallId = typeof value.toolCallId === "string" ? value.toolCallId : undefined;
     const remembered = toolCallId ? toolNamesByCallId.get(toolCallId) : undefined;
     const approvalValue = attachRememberedProviderMetadata(normalizedValue, remembered?.providerMetadata);
+    const toolApprovalChunk = {
+      ...approvalValue,
+      toolName: typeof value.toolName === "string" ? value.toolName : remembered?.toolName,
+      input: value.input === undefined ? remembered?.input : value.input,
+      dynamic: value.dynamic === undefined ? remembered?.dynamic : value.dynamic,
+    } as UIMessageChunk;
     return [
-      {
-        ...approvalValue,
-        toolName: typeof value.toolName === "string" ? value.toolName : remembered?.toolName,
-        input: value.input === undefined ? remembered?.input : value.input,
-        dynamic: value.dynamic === undefined ? remembered?.dynamic : value.dynamic,
-      } as UIMessageChunk,
+      toolApprovalChunk,
+      humanCheckpointChunkFromApproval(toolApprovalChunk, "request"),
     ];
   }
 
   if (value.type === "tool-approval-response") {
     const approvalValue = normalizedValue;
-    return [approvalValue as UIMessageChunk];
+    const toolApprovalChunk = approvalValue as UIMessageChunk;
+    return [
+      toolApprovalChunk,
+      humanCheckpointChunkFromApproval(toolApprovalChunk, "response"),
+    ];
   }
 
   if (
@@ -183,6 +189,99 @@ function isToolLifecycleChunk(value: Record<string, unknown>): boolean {
     value.type === "tool-output-error" ||
     value.type === "tool-output-denied"
   );
+}
+
+function humanCheckpointChunkFromApproval(
+  chunk: UIMessageChunk,
+  phase: "request" | "response",
+): UIMessageChunk {
+  const value = chunk as Record<string, unknown>;
+  const approvalId = stringValue(value.approvalId) ?? stringValue(value.toolCallId) ?? "approval";
+  const toolCallId = stringValue(value.toolCallId) ?? approvalId;
+  const toolName = stringValue(value.toolName);
+  const input = value.input;
+  const providerMetadata = isRecord(value.providerMetadata) ? value.providerMetadata : {};
+  const temporalMetadata = isRecord(providerMetadata.temporal) ? providerMetadata.temporal : {};
+  const metadata = {
+    ...temporalMetadata,
+    approvalId,
+    checkpointId: approvalId,
+    toolCallId,
+    ...(toolName ? { toolName } : {}),
+    ...(input !== undefined ? { input } : {}),
+  };
+  const title = approvalTitle(toolName);
+  const approved = typeof value.approved === "boolean" ? value.approved : undefined;
+  const reason = stringValue(value.reason);
+  const data: HumanCheckpointData & Record<string, unknown> = {
+    event: phase === "request" ? "checkpoint-created" : "checkpoint-submitted",
+    checkpointId: approvalId,
+    approvalId,
+    toolCallId,
+    ...(toolName ? { toolName } : {}),
+    title,
+    summary: approvalSummary(title, input),
+    status: phase === "request" ? "pending" : approved === false ? "denied" : "approved",
+    metadata,
+    ...(phase === "request"
+      ? {
+          questions: [
+            {
+              id: approvalId,
+              title,
+              prompt: approvalSummary(title, input),
+              choices: [
+                {
+                  id: "approve",
+                  label: "Approve",
+                  description: "Continue this workflow with the proposed action.",
+                  value: { approved: true },
+                },
+                {
+                  id: "deny",
+                  label: "Deny",
+                  description: "Stop this action and ask the assistant to adjust.",
+                  value: { approved: false },
+                },
+              ],
+              allowCustom: true,
+              required: true,
+            },
+          ],
+        }
+      : {
+          approved,
+          reason,
+          answers: [
+            {
+              questionId: approvalId,
+              choiceId: approved === false ? "deny" : "approve",
+              value: approved,
+              ...(reason ? { customText: reason } : {}),
+            },
+          ],
+        }),
+  };
+
+  return {
+    type: "data-human-checkpoint",
+    id: `human-checkpoint-${approvalId}`,
+    data,
+  } as UIMessageChunk;
+}
+
+function approvalTitle(toolName?: string): string {
+  if (!toolName) return "Review action";
+  return `Review ${toolName.replaceAll("_", " ")}`;
+}
+
+function approvalSummary(title: string, input: unknown): string {
+  if (input === undefined) return `Review whether the assistant should continue with ${title}.`;
+  return `Review whether the assistant should continue with ${title}.`;
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
