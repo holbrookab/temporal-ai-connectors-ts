@@ -33,8 +33,9 @@ export function createSubscribeFirstReplayStream<TLiveEvent, TChunk = unknown>({
   drainDelayMs = 75,
 }: SubscribeFirstReplayOptions<TLiveEvent, TChunk>): ReadableStream<DurableStreamEvent<TChunk>> {
   const seen = new Set<string>();
-  const pending = new Map<string, DurableStreamEvent<TChunk>>();
-  let lastEmitted = "";
+  const pending = new Map<string, PendingEvent<TChunk>>();
+  let nextPendingOrder = 0;
+  let replayCursor = "";
   let live: LiveSubscription | null = null;
   let initialReplayComplete = false;
   let finalReplayInFlight = false;
@@ -47,9 +48,7 @@ export function createSubscribeFirstReplayStream<TLiveEvent, TChunk = unknown>({
       try {
         live = await subscribe((event) => {
           const eventId = getEventId(event);
-          if (!seen.has(eventId) && !pending.has(eventId)) {
-            pending.set(eventId, { eventId, chunk: getChunk(event) });
-          }
+          addPending({ eventId, chunk: getChunk(event) });
           if (initialReplayComplete && isTerminalEvent?.(event) && !finalReplayInFlight && !finalReplayComplete) {
             finalReplayInFlight = true;
             void replayThenDrain(controller, true);
@@ -58,7 +57,7 @@ export function createSubscribeFirstReplayStream<TLiveEvent, TChunk = unknown>({
           if (initialReplayComplete) scheduleDrain(controller);
         });
 
-        await replayIntoPending(lastEmitted);
+        await replayIntoPending(replayCursor);
         initialReplayComplete = true;
         scheduleDrain(controller);
       } catch (error) {
@@ -78,7 +77,7 @@ export function createSubscribeFirstReplayStream<TLiveEvent, TChunk = unknown>({
     final: boolean,
   ) {
     try {
-      await replayIntoPending(lastEmitted);
+      await replayIntoPending(final ? "" : replayCursor);
       if (final) finalReplayComplete = true;
       scheduleDrain(controller);
     } catch (error) {
@@ -91,23 +90,27 @@ export function createSubscribeFirstReplayStream<TLiveEvent, TChunk = unknown>({
 
   async function replayIntoPending(afterEventId: string) {
     const replay = await fetchReplay(afterEventId);
-    for (const event of replay.events) {
-      if (!seen.has(event.eventId) && !pending.has(event.eventId)) pending.set(event.eventId, event);
-    }
     for (const event of attemptSnapshotEvents(replay.attempts ?? [])) {
-      if (!seen.has(event.eventId) && !pending.has(event.eventId)) {
-        pending.set(event.eventId, event as DurableStreamEvent<TChunk>);
-      }
+      addPending(event as DurableStreamEvent<TChunk>);
+    }
+    for (const event of replay.events) {
+      addPending(event);
     }
     if (fetchEphemeralChunks) {
       for (const attempt of replay.attempts ?? []) {
         if (attempt.status !== "active") continue;
         const chunks = await fetchEphemeralChunks(attempt, attempt.snapshotSequence);
         for (const chunk of chunks) {
-          if (!seen.has(chunk.eventId) && !pending.has(chunk.eventId)) pending.set(chunk.eventId, chunk);
+          addPending(chunk);
         }
       }
     }
+  }
+
+  function addPending(event: DurableStreamEvent<TChunk>) {
+    if (seen.has(event.eventId) || pending.has(event.eventId)) return;
+    pending.set(event.eventId, { event, order: nextPendingOrder });
+    nextPendingOrder += 1;
   }
 
   function scheduleDrain(controller: ReadableStreamDefaultController<DurableStreamEvent<TChunk>>) {
@@ -120,18 +123,15 @@ export function createSubscribeFirstReplayStream<TLiveEvent, TChunk = unknown>({
 
   function drain(controller: ReadableStreamDefaultController<DurableStreamEvent<TChunk>>) {
     if (closed) return;
-    const ordered = [...pending.keys()].sort();
-    for (const eventId of ordered) {
-      if (eventId <= lastEmitted) {
-        pending.delete(eventId);
-        seen.add(eventId);
-        continue;
-      }
-      const event = pending.get(eventId);
+    const ordered = [...pending.entries()].sort(([, left], [, right]) => comparePendingEvents(left, right));
+    for (const [eventId, pendingEvent] of ordered) {
       pending.delete(eventId);
+      if (seen.has(eventId)) continue;
       seen.add(eventId);
-      lastEmitted = eventId;
-      if (event) controller.enqueue(event);
+      if (isReplayCursorEventId(eventId) && (replayCursor === "" || eventId > replayCursor)) {
+        replayCursor = eventId;
+      }
+      controller.enqueue(pendingEvent.event);
     }
   }
 
@@ -142,6 +142,42 @@ export function createSubscribeFirstReplayStream<TLiveEvent, TChunk = unknown>({
       live = null;
     }
   }
+}
+
+type PendingEvent<TChunk> = {
+  event: DurableStreamEvent<TChunk>;
+  order: number;
+};
+
+function comparePendingEvents<TChunk>(left: PendingEvent<TChunk>, right: PendingEvent<TChunk>): number {
+  const leftPriority = pendingPriority(left.event);
+  const rightPriority = pendingPriority(right.event);
+  if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+
+  if (isReplayCursorEventId(left.event.eventId) && isReplayCursorEventId(right.event.eventId)) {
+    return left.event.eventId.localeCompare(right.event.eventId) || left.order - right.order;
+  }
+
+  return left.order - right.order;
+}
+
+function pendingPriority<TChunk>(event: DurableStreamEvent<TChunk>): number {
+  if (event.eventId.startsWith("!attempt#")) return 0;
+  if (isDoneChunk(event.chunk)) return 2;
+  return 1;
+}
+
+function isReplayCursorEventId(eventId: string): boolean {
+  return /^[0-9A-HJKMNP-TV-Z]+$/.test(eventId);
+}
+
+function isDoneChunk(chunk: unknown): boolean {
+  return (
+    typeof chunk === "object" &&
+    chunk !== null &&
+    "__control" in chunk &&
+    (chunk as { __control?: unknown }).__control === "done"
+  );
 }
 
 export function attemptSnapshotEvents(

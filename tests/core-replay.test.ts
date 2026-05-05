@@ -116,4 +116,89 @@ describe("createSubscribeFirstReplayStream", () => {
     expect(third.value).toEqual({ eventId: "03", chunk: { __control: "done" } });
     expect(replayCalls).toBe(2);
   });
+
+  it("does not drop cursor events that arrive after non-cursor tool events", async () => {
+    let onLive: ((event: DurableStreamEvent) => void) | undefined;
+    const stream = createSubscribeFirstReplayStream<DurableStreamEvent>({
+      drainDelayMs: 0,
+      getEventId: (event) => event.eventId,
+      getChunk: (event) => event.chunk,
+      subscribe: async (handler) => {
+        onLive = handler;
+        return { close() {} };
+      },
+      fetchReplay: async (): Promise<DurableReplayResponse> => ({
+        streamId: "s1",
+        events: [],
+      }),
+    });
+
+    const reader = stream.getReader();
+    await Promise.resolve();
+
+    onLive?.({ eventId: "tool:call-1:terminal", chunk: "tool-result" });
+    const first = await readWithTimeout(reader);
+    onLive?.({ eventId: "01KQWN1ZBKTRV1WF2BC6WPKZQE", chunk: "task-completed" });
+    const second = await readWithTimeout(reader);
+    await reader.cancel();
+
+    expect(first.value).toEqual({ eventId: "tool:call-1:terminal", chunk: "tool-result" });
+    expect(second.value).toEqual({ eventId: "01KQWN1ZBKTRV1WF2BC6WPKZQE", chunk: "task-completed" });
+  });
+
+  it("does terminal backfill from the durable cursor instead of a tool lifecycle id", async () => {
+    let onLive: ((event: DurableStreamEvent) => void) | undefined;
+    const replayAfterEventIds: string[] = [];
+    const stream = createSubscribeFirstReplayStream<DurableStreamEvent>({
+      drainDelayMs: 0,
+      getEventId: (event) => event.eventId,
+      getChunk: (event) => event.chunk,
+      isTerminalEvent: (event) =>
+        typeof event.chunk === "object" &&
+        event.chunk !== null &&
+        (event.chunk as Record<string, unknown>).__control === "done",
+      subscribe: async (handler) => {
+        onLive = handler;
+        return { close() {} };
+      },
+      fetchReplay: async (afterEventId): Promise<DurableReplayResponse> => {
+        replayAfterEventIds.push(afterEventId);
+        return {
+          streamId: "s1",
+          events:
+            replayAfterEventIds.length === 1
+              ? []
+              : afterEventId === ""
+                ? [{ eventId: "01KQWN26QYT1XCXKXZKBTWJ9RP", chunk: "missed-final-text" }]
+                : [],
+        };
+      },
+    });
+
+    const reader = stream.getReader();
+    await Promise.resolve();
+
+    onLive?.({ eventId: "tool:call-1:terminal", chunk: "tool-result" });
+    const first = await readWithTimeout(reader);
+    onLive?.({ eventId: "01KQWN26Z9MXNC5JJJGF89DJJS", chunk: { __control: "done" } });
+    const second = await readWithTimeout(reader);
+    const third = await readWithTimeout(reader);
+    await reader.cancel();
+
+    expect(first.value).toEqual({ eventId: "tool:call-1:terminal", chunk: "tool-result" });
+    expect(second.value).toEqual({ eventId: "01KQWN26QYT1XCXKXZKBTWJ9RP", chunk: "missed-final-text" });
+    expect(third.value).toEqual({ eventId: "01KQWN26Z9MXNC5JJJGF89DJJS", chunk: { __control: "done" } });
+    expect(replayAfterEventIds).toEqual(["", ""]);
+  });
 });
+
+async function readWithTimeout<T>(
+  reader: ReadableStreamDefaultReader<T>,
+): Promise<ReadableStreamReadResult<T>> {
+  return Promise.race([
+    reader.read(),
+    new Promise<ReadableStreamReadResult<T>>((_, reject) => {
+      setTimeout(() => reject(new Error("timed out waiting for stream event")), 1000);
+    }),
+  ]);
+}
