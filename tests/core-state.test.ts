@@ -156,4 +156,28 @@ describe("durable stream state", () => {
     );
     expect(selectVisibleStreamText(state, "s1", "text", { stepId: "step-1" })).toBe("");
   });
+
+  it("hydrates committed task step text from replayed snapshot events", () => {
+    const state = applyDurableStreamData(
+      {},
+      {
+        event: "snapshot",
+        streamId: "s1",
+        phase: "provider-live",
+        lane: "text",
+        attemptId: "agent:step-0:text",
+        status: "committed",
+        snapshotText: "replayed task text",
+        sequence: 4,
+        displayMode: "task",
+        taskId: "task-1",
+        stepId: "step-0",
+        stepNumber: 0,
+      },
+    );
+
+    expect(selectTaskStepStreamText(state, "s1", { taskId: "task-1", stepId: "step-0" })).toBe(
+      "replayed task text",
+    );
+  });
 });

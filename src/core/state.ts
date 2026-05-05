@@ -82,7 +82,10 @@ export function applyDurableStreamData(
         ...scopeFrom(data),
         status: data.status ?? "active",
         sequence: data.sequence,
-        text: data.status && data.status !== "active" ? "" : (data.snapshotText ?? ""),
+        text:
+          data.status === "discarded" || data.status === "failed"
+            ? ""
+            : (data.snapshotText ?? ""),
       },
     };
   }
