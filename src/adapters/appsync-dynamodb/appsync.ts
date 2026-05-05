@@ -74,6 +74,7 @@ export function createAppSyncDurableStream(
     drainDelayMs: options.drainDelayMs,
     getEventId: (event) => event.eventId,
     getChunk: (event) => event.chunk,
+    isTerminalEvent: (event) => isDoneChunk(event.chunk),
     subscribe: async (onEvent) =>
       connectAppSyncEvents({
         ...options,
@@ -97,6 +98,10 @@ export function createAppSyncDurableStream(
       return (await response.json()) as DurableReplayResponse;
     },
   });
+}
+
+function isDoneChunk(chunk: unknown): boolean {
+  return !!chunk && typeof chunk === "object" && (chunk as Record<string, unknown>).__control === "done";
 }
 
 export async function connectAppSyncEvents(options: AppSyncDurableStreamOptions & {

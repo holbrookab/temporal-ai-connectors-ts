@@ -19,6 +19,7 @@ export type SubscribeFirstReplayOptions<TLiveEvent, TChunk = unknown> = {
   ): Promise<Array<DurableStreamEvent<TChunk>>>;
   getEventId(event: TLiveEvent): string;
   getChunk(event: TLiveEvent): TChunk;
+  isTerminalEvent?: (event: TLiveEvent) => boolean;
   drainDelayMs?: number;
 };
 
@@ -28,6 +29,7 @@ export function createSubscribeFirstReplayStream<TLiveEvent, TChunk = unknown>({
   fetchEphemeralChunks,
   getEventId,
   getChunk,
+  isTerminalEvent,
   drainDelayMs = 75,
 }: SubscribeFirstReplayOptions<TLiveEvent, TChunk>): ReadableStream<DurableStreamEvent<TChunk>> {
   const seen = new Set<string>();
@@ -35,6 +37,8 @@ export function createSubscribeFirstReplayStream<TLiveEvent, TChunk = unknown>({
   let lastEmitted = "";
   let live: LiveSubscription | null = null;
   let initialReplayComplete = false;
+  let finalReplayInFlight = false;
+  let finalReplayComplete = false;
   let drainTimer: ReturnType<typeof setTimeout> | null = null;
   let closed = false;
 
@@ -46,27 +50,15 @@ export function createSubscribeFirstReplayStream<TLiveEvent, TChunk = unknown>({
           if (!seen.has(eventId) && !pending.has(eventId)) {
             pending.set(eventId, { eventId, chunk: getChunk(event) });
           }
+          if (initialReplayComplete && isTerminalEvent?.(event) && !finalReplayInFlight && !finalReplayComplete) {
+            finalReplayInFlight = true;
+            void replayThenDrain(controller, true);
+            return;
+          }
           if (initialReplayComplete) scheduleDrain(controller);
         });
 
-        const replay = await fetchReplay(lastEmitted);
-        for (const event of replay.events) {
-          if (!seen.has(event.eventId) && !pending.has(event.eventId)) pending.set(event.eventId, event);
-        }
-        for (const event of attemptSnapshotEvents(replay.attempts ?? [])) {
-          if (!seen.has(event.eventId) && !pending.has(event.eventId)) {
-            pending.set(event.eventId, event as DurableStreamEvent<TChunk>);
-          }
-        }
-        if (fetchEphemeralChunks) {
-          for (const attempt of replay.attempts ?? []) {
-            if (attempt.status !== "active") continue;
-            const chunks = await fetchEphemeralChunks(attempt, attempt.snapshotSequence);
-            for (const chunk of chunks) {
-              if (!seen.has(chunk.eventId) && !pending.has(chunk.eventId)) pending.set(chunk.eventId, chunk);
-            }
-          }
-        }
+        await replayIntoPending(lastEmitted);
         initialReplayComplete = true;
         scheduleDrain(controller);
       } catch (error) {
@@ -80,6 +72,43 @@ export function createSubscribeFirstReplayStream<TLiveEvent, TChunk = unknown>({
       closeLive();
     },
   });
+
+  async function replayThenDrain(
+    controller: ReadableStreamDefaultController<DurableStreamEvent<TChunk>>,
+    final: boolean,
+  ) {
+    try {
+      await replayIntoPending(lastEmitted);
+      if (final) finalReplayComplete = true;
+      scheduleDrain(controller);
+    } catch (error) {
+      closeLive();
+      controller.error(error);
+    } finally {
+      if (final) finalReplayInFlight = false;
+    }
+  }
+
+  async function replayIntoPending(afterEventId: string) {
+    const replay = await fetchReplay(afterEventId);
+    for (const event of replay.events) {
+      if (!seen.has(event.eventId) && !pending.has(event.eventId)) pending.set(event.eventId, event);
+    }
+    for (const event of attemptSnapshotEvents(replay.attempts ?? [])) {
+      if (!seen.has(event.eventId) && !pending.has(event.eventId)) {
+        pending.set(event.eventId, event as DurableStreamEvent<TChunk>);
+      }
+    }
+    if (fetchEphemeralChunks) {
+      for (const attempt of replay.attempts ?? []) {
+        if (attempt.status !== "active") continue;
+        const chunks = await fetchEphemeralChunks(attempt, attempt.snapshotSequence);
+        for (const chunk of chunks) {
+          if (!seen.has(chunk.eventId) && !pending.has(chunk.eventId)) pending.set(chunk.eventId, chunk);
+        }
+      }
+    }
+  }
 
   function scheduleDrain(controller: ReadableStreamDefaultController<DurableStreamEvent<TChunk>>) {
     if (closed || drainTimer) return;
@@ -119,7 +148,7 @@ export function attemptSnapshotEvents(
   attempts: DurableStreamAttempt[],
 ): Array<DurableStreamEvent<{ type: "data-llm-stream"; id: string; data: DurableStreamData; transient: true }>> {
   return attempts
-    .filter((attempt) => attempt.status === "active")
+    .filter((attempt) => attempt.status === "active" || attempt.status === "committed")
     .map((attempt) => {
       const data: DurableStreamData = {
         event: "snapshot",

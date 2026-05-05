@@ -55,6 +55,7 @@ export function createRedisSSEDurableStream(
     drainDelayMs: options.drainDelayMs,
     getEventId: (event) => event.eventId,
     getChunk: (event) => event.chunk,
+    isTerminalEvent: (event) => isDoneChunk(event.chunk),
     subscribe: (onEvent) =>
       subscribeToDurableSSE({
         endpoint: sseEndpoint,
@@ -75,6 +76,10 @@ export function createRedisSSEDurableStream(
       return (await response.json()) as DurableReplayResponse;
     },
   });
+}
+
+function isDoneChunk(chunk: unknown): boolean {
+  return !!chunk && typeof chunk === "object" && (chunk as Record<string, unknown>).__control === "done";
 }
 
 export function createRedisTemporalChatTransport<TAck extends DurableChatAck = DurableChatAck>(

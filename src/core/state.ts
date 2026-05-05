@@ -52,13 +52,16 @@ export function applyAttemptManifests(
         toolName: attempt.toolName,
         ...scopeFrom(attempt),
         status: attempt.status,
-        text: attempt.status === "active" ? (attempt.snapshotText ?? "") : "",
+        text:
+          attempt.status === "active" || attempt.status === "committed"
+            ? (attempt.snapshotText ?? "")
+            : "",
         sequence: attempt.snapshotSequence,
         updatedAt: attempt.updatedAt,
       },
     };
   }
-  return pruneInactive(next);
+  return pruneNonRenderable(next);
 }
 
 export function applyDurableStreamData(
@@ -250,8 +253,10 @@ function mergeScope(base: StreamScope, next: StreamScope): StreamScope {
   };
 }
 
-function pruneInactive(state: DurableStreamState): DurableStreamState {
+function pruneNonRenderable(state: DurableStreamState): DurableStreamState {
   return Object.fromEntries(
-    Object.entries(state).filter(([, attempt]) => attempt.status === "active"),
+    Object.entries(state).filter(([, attempt]) =>
+      attempt.status === "active" || attempt.status === "committed"
+    ),
   );
 }

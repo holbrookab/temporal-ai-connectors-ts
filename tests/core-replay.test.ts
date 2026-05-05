@@ -76,4 +76,44 @@ describe("createSubscribeFirstReplayStream", () => {
     });
     expect(second.value?.eventId).toBe("01");
   });
+
+  it("does one final replay before emitting a live terminal event", async () => {
+    let onLive: ((event: DurableStreamEvent) => void) | undefined;
+    let replayCalls = 0;
+    const stream = createSubscribeFirstReplayStream<DurableStreamEvent>({
+      drainDelayMs: 0,
+      getEventId: (event) => event.eventId,
+      getChunk: (event) => event.chunk,
+      isTerminalEvent: (event) =>
+        typeof event.chunk === "object" &&
+        event.chunk !== null &&
+        (event.chunk as Record<string, unknown>).__control === "done",
+      subscribe: async (handler) => {
+        onLive = handler;
+        return { close() {} };
+      },
+      fetchReplay: async (): Promise<DurableReplayResponse> => {
+        replayCalls += 1;
+        return {
+          streamId: "s1",
+          events:
+            replayCalls === 1
+              ? [{ eventId: "01", chunk: "initial" }]
+              : [{ eventId: "02", chunk: "missed-terminal-tool" }],
+        };
+      },
+    });
+
+    const reader = stream.getReader();
+    const first = await reader.read();
+    onLive?.({ eventId: "03", chunk: { __control: "done" } });
+    const second = await reader.read();
+    const third = await reader.read();
+    await reader.cancel();
+
+    expect(first.value).toEqual({ eventId: "01", chunk: "initial" });
+    expect(second.value).toEqual({ eventId: "02", chunk: "missed-terminal-tool" });
+    expect(third.value).toEqual({ eventId: "03", chunk: { __control: "done" } });
+    expect(replayCalls).toBe(2);
+  });
 });

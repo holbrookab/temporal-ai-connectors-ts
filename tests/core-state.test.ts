@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyAttemptManifests,
   applyDurableStreamData,
   selectActiveStreamText,
+  selectVisibleStreamText,
   selectTaskStepStreamText,
   selectToolInputText,
   type DurableStreamState,
@@ -115,5 +117,43 @@ describe("durable stream state", () => {
     expect(selectToolInputText(state, "s1", "call-1", { taskId: "task-1" })).toBe(
       "{\"q\":\"Ada\"}",
     );
+  });
+
+  it("hydrates committed task step text from durable attempt manifests", () => {
+    const state = applyAttemptManifests(
+      {},
+      [
+        {
+          streamId: "s1",
+          lane: "text",
+          attemptId: "agent:step-0:text",
+          status: "committed",
+          snapshotText: "persisted task text",
+          snapshotSequence: 4,
+          updatedAt: 10,
+          displayMode: "task",
+          taskId: "task-1",
+          stepId: "step-0",
+          stepNumber: 0,
+        },
+        {
+          streamId: "s1",
+          lane: "text",
+          attemptId: "discarded:text",
+          status: "discarded",
+          snapshotText: "discarded",
+          snapshotSequence: 1,
+          updatedAt: 11,
+          displayMode: "task",
+          taskId: "task-1",
+          stepId: "step-1",
+        },
+      ],
+    );
+
+    expect(selectTaskStepStreamText(state, "s1", { taskId: "task-1", stepId: "step-0" })).toBe(
+      "persisted task text",
+    );
+    expect(selectVisibleStreamText(state, "s1", "text", { stepId: "step-1" })).toBe("");
   });
 });
