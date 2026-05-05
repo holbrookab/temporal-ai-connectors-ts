@@ -7,6 +7,16 @@ import {
   normalizeUIMessageChunks,
 } from "../src/ai-sdk";
 
+async function readStream<T>(stream: ReadableStream<T>): Promise<T[]> {
+  const reader = stream.getReader();
+  const chunks: T[] = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) return chunks;
+    chunks.push(value);
+  }
+}
+
 describe("createUIMessageChunkStreamFromDurableEvents", () => {
   it("emits an AI SDK start chunk before durable events when startMessageId is provided", async () => {
     const durableEvents = new ReadableStream({
@@ -290,6 +300,37 @@ describe("createUIMessageChunkStreamFromDurableEvents", () => {
     expect(requestBody).toMatchObject({
       conversationId: "conversation-1",
       userMessageId: "user-message-1",
+    });
+  });
+
+  it("uses durable assistant message id as the streamed UI message id when available", async () => {
+    const transport = new TemporalDurableChatTransport({
+      api: "/api/chat",
+      fetch: async () =>
+        Response.json({
+          streamId: "workflow-stream-id",
+          assistantMessageId: "assistant-message-id",
+        }),
+      streamFactory: () =>
+        new ReadableStream({
+          start(controller) {
+            controller.close();
+          },
+        }),
+    });
+
+    const stream = await transport.sendMessages({
+      trigger: "submit-message",
+      chatId: "chat-1",
+      messageId: "message-1",
+      messages: [{ id: "message-1", role: "user", parts: [{ type: "text", text: "Hello" }] }],
+      abortSignal: undefined,
+    });
+
+    const chunks = await readStream(stream);
+    expect(chunks[0]).toMatchObject({
+      type: "start",
+      messageId: "assistant-message-id",
     });
   });
 });

@@ -9,6 +9,7 @@ import type {
 export type DurableChatAck = {
   accepted?: boolean;
   streamId: string;
+  assistantMessageId?: string;
   userId?: string;
   scopeId?: string;
   channel?: string;
