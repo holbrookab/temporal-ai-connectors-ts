@@ -16,6 +16,7 @@ export type DurableStreamAttemptState = StreamScope & {
   toolName?: string;
   status: AttemptStatus;
   text: string;
+  object?: unknown;
   sequence: number;
   updatedAt?: number;
 };
@@ -56,6 +57,10 @@ export function applyAttemptManifests(
           attempt.status === "active" || attempt.status === "committed"
             ? (attempt.snapshotText ?? "")
             : "",
+        object:
+          attempt.status === "active" || attempt.status === "committed"
+            ? attempt.snapshotObject
+            : undefined,
         sequence: attempt.snapshotSequence,
         updatedAt: attempt.updatedAt,
       },
@@ -86,6 +91,10 @@ export function applyDurableStreamData(
           data.status === "discarded" || data.status === "failed"
             ? ""
             : (data.snapshotText ?? ""),
+        object:
+          data.status === "discarded" || data.status === "failed"
+            ? undefined
+            : data.snapshotObject,
       },
     };
   }
@@ -109,6 +118,7 @@ export function applyDurableStreamData(
           toolName: data.toolName,
           ...scopeFrom(data),
           text: "",
+          object: undefined,
         }),
         status: data.status,
         sequence: data.sequence,
@@ -116,6 +126,10 @@ export function applyDurableStreamData(
           data.status === "discarded" || data.status === "failed"
             ? ""
             : (data.snapshotText ?? existing?.text ?? ""),
+        object:
+          data.status === "discarded" || data.status === "failed"
+            ? undefined
+            : (data.snapshotObject ?? existing?.object),
       },
     };
   }
@@ -130,6 +144,7 @@ export function applyDurableStreamData(
     ...scopeFrom(data),
     status: "active" as const,
     text: "",
+    object: undefined,
     sequence: 0,
   };
   if (data.sequence <= existing.sequence) return state;
@@ -150,6 +165,7 @@ export function applyDurableStreamData(
       status: "active",
       sequence: data.sequence,
       text: shouldAppend ? `${existing.text}${data.delta ?? ""}` : existing.text,
+      object: data.snapshotObject ?? existing.object,
     },
   };
 }
@@ -201,6 +217,36 @@ export function selectToolInputText(
   });
 }
 
+export function selectActiveStreamObject(
+  state: DurableStreamState,
+  streamId: string,
+  lane: StreamLane,
+  filter: StreamSelector = {},
+): unknown {
+  return selectObjectByStatus(state, streamId, lane, new Set(["active"]), filter);
+}
+
+export function selectVisibleStreamObject(
+  state: DurableStreamState,
+  streamId: string,
+  lane: StreamLane,
+  filter: StreamSelector = {},
+): unknown {
+  return selectObjectByStatus(state, streamId, lane, new Set(["active", "committed"]), filter);
+}
+
+export function selectTaskStepStreamObject(
+  state: DurableStreamState,
+  streamId: string,
+  input: { taskId: string; stepId?: string; lane?: StreamLane },
+): unknown {
+  return selectVisibleStreamObject(state, streamId, input.lane ?? "object", {
+    displayMode: "task",
+    taskId: input.taskId,
+    stepId: input.stepId,
+  });
+}
+
 function selectTextByStatus(
   state: DurableStreamState,
   streamId: string,
@@ -216,6 +262,22 @@ function selectTextByStatus(
     .map((attempt) => attempt.text)
     .filter(Boolean)
     .join("");
+}
+
+function selectObjectByStatus(
+  state: DurableStreamState,
+  streamId: string,
+  lane: StreamLane,
+  statuses: Set<AttemptStatus>,
+  filter: StreamSelector,
+): unknown {
+  const attempts = Object.values(state)
+    .filter((attempt) => attempt.streamId === streamId && attempt.lane === lane)
+    .filter((attempt) => statuses.has(attempt.status))
+    .filter((attempt) => matchesSelector(attempt, filter))
+    .filter((attempt) => attempt.object !== undefined)
+    .sort((a, b) => (a.updatedAt ?? 0) - (b.updatedAt ?? 0) || a.sequence - b.sequence);
+  return attempts.at(-1)?.object;
 }
 
 function matchesSelector(attempt: DurableStreamAttemptState, filter: StreamSelector): boolean {

@@ -111,6 +111,7 @@ export type LiveChunk = AttemptRef & {
   delta?: string;
   input?: unknown;
   element?: unknown;
+  snapshotObject?: unknown;
   providerPart?: unknown;
 };
 

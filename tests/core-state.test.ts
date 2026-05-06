@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   applyAttemptManifests,
   applyDurableStreamData,
+  selectActiveStreamObject,
   selectActiveStreamText,
+  selectVisibleStreamObject,
   selectVisibleStreamText,
+  selectTaskStepStreamObject,
   selectTaskStepStreamText,
   selectToolInputText,
   type DurableStreamState,
@@ -178,6 +181,72 @@ describe("durable stream state", () => {
 
     expect(selectTaskStepStreamText(state, "s1", { taskId: "task-1", stepId: "step-0" })).toBe(
       "replayed task text",
+    );
+  });
+
+  it("applies live, snapshot, and completion object state", () => {
+    let state: DurableStreamState = {};
+    state = applyDurableStreamData(state, {
+      event: "text-delta",
+      streamId: "s1",
+      phase: "provider-live",
+      lane: "object",
+      attemptId: "agent:step-0:object",
+      sequence: 1,
+      snapshotObject: { status: "needs_user" },
+      displayMode: "task",
+      taskId: "task-1",
+      stepId: "step-0",
+    });
+
+    expect(selectActiveStreamObject(state, "s1", "object", { taskId: "task-1" })).toEqual({
+      status: "needs_user",
+    });
+    expect(selectTaskStepStreamObject(state, "s1", { taskId: "task-1", stepId: "step-0" })).toEqual(
+      { status: "needs_user" },
+    );
+
+    state = applyDurableStreamData(state, {
+      event: "attempt-commit",
+      streamId: "s1",
+      phase: "provider-live",
+      lane: "object",
+      attemptId: "agent:step-0:object",
+      sequence: 2,
+      status: "committed",
+      snapshotObject: { status: "needs_user", reason: "approval required" },
+      displayMode: "task",
+      taskId: "task-1",
+      stepId: "step-0",
+    });
+
+    expect(selectVisibleStreamObject(state, "s1", "object", { taskId: "task-1" })).toEqual({
+      status: "needs_user",
+      reason: "approval required",
+    });
+  });
+
+  it("hydrates committed object state from durable attempt manifests", () => {
+    const state = applyAttemptManifests(
+      {},
+      [
+        {
+          streamId: "s1",
+          lane: "object",
+          attemptId: "agent:step-0:object",
+          status: "committed",
+          snapshotObject: { status: "complete" },
+          snapshotSequence: 3,
+          updatedAt: 10,
+          displayMode: "task",
+          taskId: "task-1",
+          stepId: "step-0",
+        },
+      ],
+    );
+
+    expect(selectTaskStepStreamObject(state, "s1", { taskId: "task-1", stepId: "step-0" })).toEqual(
+      { status: "complete" },
     );
   });
 });
